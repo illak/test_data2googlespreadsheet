@@ -1,6 +1,6 @@
 ## Pasos para construir la imágen y ejecutar el script
 
-### Construir imágen
+### Construir imagen
 
 ```
 sudo docker run -it --rm data2spreadsheet:v01
