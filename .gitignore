@@ -1,2 +1,4 @@
 .env
 my_json_file.json
+rundocker.sh
+cron_logs.log
