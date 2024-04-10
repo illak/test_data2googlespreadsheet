@@ -4,6 +4,7 @@ import sqlalchemy
 import os
 from dotenv import load_dotenv
 from sqlalchemy.sql import text
+from urllib.parse import quote_plus
 
 import pickle
 from googleapiclient.discovery import build
@@ -11,19 +12,51 @@ from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
 load_dotenv()
-
-HOST = os.getenv('HOST_DB')
-PORT = os.getenv('PORT_DB')
+PORT_DB = os.getenv('PORT_DB')
+HOST_DB = os.getenv('HOST_DB')
 DB = os.getenv('DB')
-USER = os.getenv('USER_DB')
-PASS = os.getenv('PASS_DB')
+USER_DB = os.getenv('USER_DB')
+PASS_DB = os.getenv('PASS_DB')
+PORT_DB1 = os.getenv('PORT_DB1')
+HOST_DB1 = os.getenv('HOST_DB1')
+DB1 = os.getenv('DB1')
+USER_DB1 = os.getenv('USER_DB1')
+PASS_DB1 = os.getenv('PASS_DB1')
+
+#change this by your sheet ID
+SAMPLE_SPREADSHEET_ID_input = os.getenv('SPREADSHEET_ID')
+
+#change the range if needed
+SAMPLE_RANGE_NAME = 'A1:AA8000'
+
+def selectDBCred(dbidx):
+    cred = {}
+
+    if (dbidx == 0):
+        cred["PORT"] = PORT_DB
+        cred["HOST"] = HOST_DB
+        cred["DB"] = DB
+        cred["USER"] = USER_DB
+        cred["PASS"] = PASS_DB
+        
+    elif (dbidx == 1):
+        cred["PORT"] = PORT_DB1
+        cred["HOST"] = HOST_DB1
+        cred["DB"] = DB1
+        cred["USER"] = USER_DB1
+        cred["PASS"] = PASS_DB1
+
+    return cred
 
 
-def getDFfromDB(query_db):
+def getDFfromDB(query_db, dbidx):
 
     try:
+        cred = selectDBCred(dbidx)
 
-        url = f"mysql+mysqlconnector://{USER}:{PASS}@{HOST}:{PORT}/{DB}"
+        encoded_pass = quote_plus(cred['PASS'])
+
+        url = f"mysql+mysqlconnector://{cred['USER']}:{encoded_pass}@{cred['HOST']}:{cred['PORT']}/{cred['DB']}"
 
         engine = sqlalchemy.create_engine(url)
 
@@ -38,20 +71,13 @@ def getDFfromDB(query_db):
         print(str(e))
 
 
-def getDataFromQuery(query):
+def getDataFromQuery(query, bdidx):
     
-    df = getDFfromDB(query.replace('"', ''))
+    df = getDFfromDB(query.replace('"', ''), bdidx)
 
     #print(df['tipo_carrera'])
 
     return df
-
-
-#change this by your sheet ID
-SAMPLE_SPREADSHEET_ID_input = os.getenv('SPREADSHEET_ID')
-
-#change the range if needed
-SAMPLE_RANGE_NAME = 'A1:AA8000'
 
 def Create_Service(client_secret_file, api_service_name, api_version, *scopes):
     global service
@@ -88,17 +114,19 @@ def Create_Service(client_secret_file, api_service_name, api_version, *scopes):
 # change 'my_json_file.json' by your downloaded JSON file.
 Create_Service('my_json_file.json', 'sheets', 'v4',['https://www.googleapis.com/auth/spreadsheets'])
     
-def Export_Data_To_Sheets(query, id_destino, sheet_name, col_fechas, range):
+def Export_Data_To_Sheets(query, id_destino, sheet_name, col_fechas, range, bdidx):
 
-    testDf = getDataFromQuery(query)
+    testDf = getDataFromQuery(query, bdidx)
     testDf.fillna('', inplace=True)
 
-    print(col_fechas)
+    #print(col_fechas)
 
     for col in col_fechas:
-        testDf[col] = pd.to_datetime(testDf[col], format='%Y-%m-%d')
-        #testDf[col] = testDf[col].dt.strftime('%Y/%m/%d')
-        testDf[col] = testDf[col].dt.strftime('%Y-%m-%d')
+        # No puede haber nombres de columnas vacios
+        if col != '':
+            testDf[col] = pd.to_datetime(testDf[col], format='%Y-%m-%d')
+            #testDf[col] = testDf[col].dt.strftime('%Y/%m/%d')
+            testDf[col] = testDf[col].dt.strftime('%Y-%m-%d')
 
     #testDf['tipo_carrera'] = testDf['tipo_carrera'].astype(str)
 
@@ -124,7 +152,7 @@ def Export_Data_To_Sheets(query, id_destino, sheet_name, col_fechas, range):
             majorDimension='ROWS',
             values=testDf.T.reset_index().T.values.tolist())
     ).execute()
-    print('Sheet successfully Updated')
+    print('Hoja actualizada correctamente!')
 
 
 def getQueriesInfo():
@@ -133,7 +161,7 @@ def getQueriesInfo():
     
     result = (service.spreadsheets()
                       .values()
-                      .get(spreadsheetId=SAMPLE_SPREADSHEET_ID_input, range="A2:E")
+                      .get(spreadsheetId=SAMPLE_SPREADSHEET_ID_input, range="A2:F")
                       .execute())
 
     rows = result.get("values", [])
@@ -141,7 +169,8 @@ def getQueriesInfo():
     print(f"{len(rows)} rows retrieved")
     for row in rows:
         queries.append({'consulta': row[1], 'destino': row[2], 'hoja': row[3], 
-                        'col_fechas': [x.strip() for x in row[4].split(',')]})
+                        'col_fechas': [x.strip() for x in row[4].split(',')],
+                        'bd': int(row[5])})
 
     #print(queries)
     return queries
@@ -151,5 +180,7 @@ if __name__ == "__main__":
     
     for i, query in enumerate(queries):
         print(f"Procesando QUERY: {i} ...")
-        Export_Data_To_Sheets(query['consulta'], query['destino'], query['hoja'], query['col_fechas'], 'A:Z')
-        pass
+        Export_Data_To_Sheets(query['consulta'], query['destino'], query['hoja'], 
+                              query['col_fechas'], 'A:Z', query['bd'])
+    
+    print("Todo OK!!!")
